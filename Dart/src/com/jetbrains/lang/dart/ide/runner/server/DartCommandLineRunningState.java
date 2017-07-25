@@ -89,7 +89,12 @@ public class DartCommandLineRunningState extends CommandLineState {
       new OpenDartObservatoryUrlAction(null, () -> !processHandler.isProcessTerminated());
     addObservatoryUrlConsumer(openObservatoryAction::setUrl);
 
+    final OpenDartMemoryDashboardUrlAction openObservatoryHeapSnapshotAction =
+      new OpenDartMemoryDashboardUrlAction(null, () -> !processHandler.isProcessTerminated());
+    addObservatoryUrlConsumer(openObservatoryHeapSnapshotAction::setUrl);
+
     actions.add(openObservatoryAction);
+    actions.add(openObservatoryHeapSnapshotAction);
   }
 
   @NotNull

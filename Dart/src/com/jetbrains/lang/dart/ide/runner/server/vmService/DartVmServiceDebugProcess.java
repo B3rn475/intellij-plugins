@@ -36,6 +36,7 @@ import com.jetbrains.lang.dart.analyzer.DartAnalysisServerService;
 import com.jetbrains.lang.dart.ide.runner.DartConsoleFilter;
 import com.jetbrains.lang.dart.ide.runner.actions.DartPopFrameAction;
 import com.jetbrains.lang.dart.ide.runner.base.DartDebuggerEditorsProvider;
+import com.jetbrains.lang.dart.ide.runner.server.OpenDartMemoryDashboardUrlAction;
 import com.jetbrains.lang.dart.ide.runner.server.OpenDartObservatoryUrlAction;
 import com.jetbrains.lang.dart.ide.runner.server.vmService.frame.DartVmServiceStackFrame;
 import com.jetbrains.lang.dart.ide.runner.server.vmService.frame.DartVmServiceSuspendContext;
@@ -83,6 +84,8 @@ public class DartVmServiceDebugProcess extends XDebugProcess {
 
   @NotNull private final OpenDartObservatoryUrlAction myOpenObservatoryAction =
     new OpenDartObservatoryUrlAction(null, () -> myVmConnected && !getSession().isStopped());
+  @NotNull private final OpenDartMemoryDashboardUrlAction myOpenObservatoryMemoryDashboardAction =
+    new OpenDartMemoryDashboardUrlAction(null, () -> myVmConnected && !getSession().isStopped());
 
 
   public DartVmServiceDebugProcess(@NotNull final XDebugSession session,
@@ -140,6 +143,7 @@ public class DartVmServiceDebugProcess extends XDebugProcess {
             final String urlBase = event.getText().substring(prefix.length());
             scheduleConnect("ws://" + StringUtil.trimTrailing(urlBase.trim(), '/') + "/ws");
             myOpenObservatoryAction.setUrl("http://" + urlBase);
+            myOpenObservatoryMemoryDashboardAction.setUrl("http://" + urlBase);
           }
         }
       });
@@ -437,6 +441,7 @@ public class DartVmServiceDebugProcess extends XDebugProcess {
     // For Run tool window this action is added in DartCommandLineRunningState.createActions()
     topToolbar.addSeparator();
     topToolbar.addAction(myOpenObservatoryAction);
+    topToolbar.addAction(myOpenObservatoryMemoryDashboardAction);
     topToolbar.addAction(new DartPopFrameAction());
   }
 
@@ -497,8 +502,21 @@ public class DartVmServiceDebugProcess extends XDebugProcess {
 
   @Nullable
   public XSourcePosition getSourcePosition(@NotNull final String isolateId, @NotNull final ScriptRef scriptRef, int tokenPos) {
+    return getSourcePosition(isolateId, scriptRef.getId(), scriptRef.getUri(), tokenPos);
+  }
+
+  @Nullable
+  public XSourcePosition getSourcePosition(@NotNull final String isolateId, @NotNull final Script script, int tokenPos) {
+    return getSourcePosition(isolateId, script.getId(), script.getUri(), tokenPos);
+  }
+
+  @Nullable
+  private XSourcePosition getSourcePosition(@NotNull final String isolateId,
+                                           @NotNull final String scriptId,
+                                           @NotNull final String scriptUri,
+                                           int tokenPos) {
     VirtualFile file = ReadAction.compute(() -> {
-      String uri = scriptRef.getUri();
+      String uri = scriptUri;
 
       if (myDASExecutionContextId != null && !isDartPatchUri(uri)) {
         final String path =
@@ -520,10 +538,10 @@ public class DartVmServiceDebugProcess extends XDebugProcess {
     });
 
     if (file == null) {
-      file = myScriptIdToContentMap.get(scriptRef.getId());
+      file = myScriptIdToContentMap.get(scriptId);
     }
 
-    TIntObjectHashMap<Pair<Integer, Integer>> tokenPosToLineAndColumn = myScriptIdToLinesAndColumnsMap.get(scriptRef.getId());
+    TIntObjectHashMap<Pair<Integer, Integer>> tokenPosToLineAndColumn = myScriptIdToLinesAndColumnsMap.get(scriptId);
 
     if (file != null && tokenPosToLineAndColumn != null) {
       final Pair<Integer, Integer> lineAndColumn = tokenPosToLineAndColumn.get(tokenPos);
@@ -531,18 +549,18 @@ public class DartVmServiceDebugProcess extends XDebugProcess {
       return XDebuggerUtil.getInstance().createPosition(file, lineAndColumn.first, lineAndColumn.second);
     }
 
-    final Script script = myVmServiceWrapper.getScriptSync(isolateId, scriptRef.getId());
+    final Script script = myVmServiceWrapper.getScriptSync(isolateId, scriptId);
     if (script == null) return null;
 
     if (file == null) {
       file = new LightVirtualFile(PathUtil.getFileName(script.getUri()), DartFileType.INSTANCE, script.getSource());
       ((LightVirtualFile)file).setWritable(false);
-      myScriptIdToContentMap.put(scriptRef.getId(), (LightVirtualFile)file);
+      myScriptIdToContentMap.put(scriptId, (LightVirtualFile)file);
     }
 
     if (tokenPosToLineAndColumn == null) {
       tokenPosToLineAndColumn = createTokenPosToLineAndColumnMap(script.getTokenPosTable());
-      myScriptIdToLinesAndColumnsMap.put(scriptRef.getId(), tokenPosToLineAndColumn);
+      myScriptIdToLinesAndColumnsMap.put(scriptId, tokenPosToLineAndColumn);
     }
 
     final Pair<Integer, Integer> lineAndColumn = tokenPosToLineAndColumn.get(tokenPos);

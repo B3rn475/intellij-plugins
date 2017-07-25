@@ -21,6 +21,7 @@ public class DartIcons {
   public static final Icon Dart_warning = load("/icons/dart_warning.png"); // 16x16
   public static final Icon Dart_web = load("/icons/dart_web.png"); // 16x16
   public static final Icon Observatory = load("/icons/observatory.png"); // 16x16
+  public static final Icon Observatory_Memory = load("/icons/observatory_memory.png"); // 16x16
   public static final Icon Restart_server = load("/icons/restart_server.png"); // 16x16
   public static final Icon Warning_point = load("/icons/warning_point.png"); // 6x6
 }

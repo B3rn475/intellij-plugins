@@ -1,6 +1,8 @@
 package com.jetbrains.lang.dart.ide.runner.server.vmService;
 
 import com.google.common.collect.Lists;
+import com.google.gson.JsonObject;
+import com.intellij.execution.filters.OpenFileHyperlinkInfo;
 import com.intellij.execution.ui.ConsoleViewContentType;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
@@ -19,9 +21,12 @@ import com.jetbrains.lang.dart.ide.runner.server.vmService.frame.DartAsyncMarker
 import com.jetbrains.lang.dart.ide.runner.server.vmService.frame.DartVmServiceEvaluator;
 import com.jetbrains.lang.dart.ide.runner.server.vmService.frame.DartVmServiceStackFrame;
 import com.jetbrains.lang.dart.ide.runner.server.vmService.frame.DartVmServiceValue;
+import org.dartlang.vm.service.RemoteServiceCompleter;
+import org.dartlang.vm.service.RemoteServiceRunner;
 import org.dartlang.vm.service.VmService;
 import org.dartlang.vm.service.consumer.*;
 import org.dartlang.vm.service.element.*;
+import org.dartlang.vm.service.internal.VmServiceConst;
 import org.dartlang.vm.service.logging.Logging;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -141,6 +146,14 @@ public class VmServiceWrapper implements Disposable {
       streamListen(VmService.STDOUT_STREAM_ID, VmServiceConsumers.EMPTY_SUCCESS_CONSUMER);
       streamListen(VmService.STDERR_STREAM_ID, VmServiceConsumers.EMPTY_SUCCESS_CONSUMER);
     }
+
+    myVmService.addServiceRunner("openSourceLocation", new RemoteServiceRunner() {
+      @Override
+      public void run(JsonObject params, RemoteServiceCompleter completer) {
+        onOpenSourceLocationRequested(params, completer);
+      }
+    });
+    myVmService.registerService("openSourceLocation", "IntelliJ", VmServiceConsumers.EMPTY_SUCCESS_CONSUMER);
   }
 
   private void streamListen(@NotNull final String streamId, @NotNull final SuccessConsumer consumer) {
@@ -294,10 +307,11 @@ public class VmServiceWrapper implements Disposable {
    * Reloaded scripts need to have their breakpoints re-applied; re-set all existing breakpoints.
    */
   public void restoreBreakpointsForIsolate(@NotNull final String isolateId, @Nullable final Runnable onFinished) {
+    final Set<XLineBreakpoint<XBreakpointProperties>> xBreakpoints = myBreakpointHandler.getXBreakpoints();
     // Remove all existing VM breakpoints for this isolate.
     myBreakpointHandler.removeAllVmBreakpoints(isolateId);
     // Re-set existing breakpoints.
-    doSetBreakpointsForIsolate(myBreakpointHandler.getXBreakpoints(), isolateId, onFinished);
+    doSetBreakpointsForIsolate(xBreakpoints, isolateId, onFinished);
   }
 
   public void addTemporaryBreakpoint(@NotNull final XSourcePosition position,
@@ -475,5 +489,67 @@ public class VmServiceWrapper implements Disposable {
                                       @NotNull final String expression,
                                       @NotNull final EvaluateConsumer consumer) {
     addRequest(() -> myVmService.evaluate(isolateId, targetId, expression, consumer));
+  }
+
+  private void onOpenSourceLocationRequested(JsonObject params, RemoteServiceCompleter completer) {
+    final String isolateId;
+    try {
+      isolateId = params.get("isolateId").getAsString();
+    } catch (Exception e) {
+      completer.error(VmServiceConst.INVALID_PARAMS, "Invalid 'isolateId'", null);
+      return;
+    }
+
+    final String scriptId;
+    try {
+      scriptId = params.get("scriptId").getAsString();
+    } catch (Exception e) {
+      completer.error(VmServiceConst.INVALID_PARAMS, "Invalid 'scriptId'", null);
+      return;
+    }
+
+    final int tokenPos;
+    try {
+      tokenPos = params.get("tokenPos").getAsInt();
+    } catch (Exception e) {
+      completer.error(VmServiceConst.INVALID_PARAMS, "Invalid 'tokenPos'", null);
+      return;
+    }
+
+    getObject(isolateId, scriptId, new GetObjectConsumer() {
+      @Override
+      public void received(Obj response) {
+        if (response != null && response instanceof Script) {
+          ApplicationManager.getApplication().invokeLater(() -> {
+            final XSourcePosition source =
+              myDebugProcess.getSourcePosition(isolateId, (Script)response, tokenPos);
+            if (source != null) {
+              final OpenFileHyperlinkInfo
+                info = new OpenFileHyperlinkInfo(myDebugProcess.getSession().getProject(), source.getFile(), source.getLine());
+              final JsonObject result = new JsonObject();
+              result.addProperty("type", "Success");
+              completer.result(result);
+              ApplicationManager.getApplication().runWriteAction(() -> {
+                info.navigate(myDebugProcess.getSession().getProject());
+              });
+            } else {
+              completer.error(VmServiceConst.SERVER_ERROR, "Unable to location script location", null);
+            }
+          });
+        } else {
+          completer.error(VmServiceConst.INVALID_PARAMS, "Invalid 'scriptId'", null);
+        }
+      }
+
+      @Override
+      public void received(Sentinel response) {
+        completer.error(VmServiceConst.INVALID_PARAMS, "Script is not available", null);
+      }
+
+      @Override
+      public void onError(RPCError error) {
+        completer.error(error.getCode(), error.getMessage(), null);
+      }
+    });
   }
 }
