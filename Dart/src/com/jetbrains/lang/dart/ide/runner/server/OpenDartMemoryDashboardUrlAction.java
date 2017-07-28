@@ -18,6 +18,7 @@ import java.util.List;
 public class OpenDartMemoryDashboardUrlAction extends DumbAwareAction {
   @Nullable private String myUrl;
   private final Computable<Boolean> myIsApplicable;
+  private Process process;
 
   /**
    * @param url <code>null</code> if URL is not known at the moment of the action instantiation; use {@link #setUrl(String)} afterwards
@@ -43,10 +44,15 @@ public class OpenDartMemoryDashboardUrlAction extends DumbAwareAction {
   public void actionPerformed(@NotNull final AnActionEvent e) {
     if (myUrl != null) {
       String url = myUrl +  "#/memory-dashboard?editor=IntelliJ";
+      url = url.replace("\n","");
       final List<WebBrowser> chromeBrowsers = WebBrowserManager.getInstance().getBrowsers(
         browser -> browser.getFamily() == BrowserFamily.CHROME, false);
       try {
-        Runtime.getRuntime().exec(chromeBrowsers.get(0).getPath() + " --new-window --window-position+0,0 --window-size=800,600 " + url.replace("\n",""));
+        if (process == null || !process.isAlive()) {
+          process = Runtime.getRuntime().exec(chromeBrowsers.get(0).getPath() + " --new-window --user-data-dir=\"Intellij\" " + url);
+        } else {
+          Runtime.getRuntime().exec(chromeBrowsers.get(0).getPath() + " --user-data-dir=\"Intellij\" " + url);
+        }
       }
       catch (IOException e1) {
         BrowserLauncher.getInstance().browse(url, chromeBrowsers.isEmpty() ? null : chromeBrowsers.get(0));

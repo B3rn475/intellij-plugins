@@ -7,8 +7,12 @@ import com.intellij.execution.ui.ConsoleViewContentType;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Ref;
+import com.intellij.openapi.wm.IdeFocusManager;
+import com.intellij.openapi.wm.WindowManager;
 import com.intellij.util.Alarm;
+import com.intellij.util.BitUtil;
 import com.intellij.util.concurrency.Semaphore;
 import com.intellij.xdebugger.XSourcePosition;
 import com.intellij.xdebugger.breakpoints.XBreakpointProperties;
@@ -31,6 +35,7 @@ import org.dartlang.vm.service.logging.Logging;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import javax.swing.*;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -520,7 +525,7 @@ public class VmServiceWrapper implements Disposable {
       @Override
       public void received(Obj response) {
         if (response != null && response instanceof Script) {
-          ApplicationManager.getApplication().invokeLater(() -> {
+          ApplicationManager.getApplication().executeOnPooledThread(() -> {
             final XSourcePosition source =
               myDebugProcess.getSourcePosition(isolateId, (Script)response, tokenPos);
             if (source != null) {
@@ -529,8 +534,26 @@ public class VmServiceWrapper implements Disposable {
               final JsonObject result = new JsonObject();
               result.addProperty("type", "Success");
               completer.result(result);
-              ApplicationManager.getApplication().runWriteAction(() -> {
-                info.navigate(myDebugProcess.getSession().getProject());
+              ApplicationManager.getApplication().invokeLater(() -> {
+                ApplicationManager.getApplication().runWriteAction(() -> {
+                  final Project project = myDebugProcess.getSession().getProject();
+                  info.navigate(project);
+
+                  final JFrame projectFrame = WindowManager.getInstance().getFrame(project);
+                  final int frameState = projectFrame.getExtendedState();
+
+                  projectFrame.setExtendedState(frameState ^ java.awt.Frame.ICONIFIED);
+                  if (!BitUtil.isSet(frameState, java.awt.Frame.ICONIFIED)) {
+                    try {
+                      Thread.sleep(100);
+                    } catch (InterruptedException e) {}
+                    projectFrame.setExtendedState(frameState);
+                  }
+                  projectFrame.toFront();
+                  IdeFocusManager.getGlobalInstance().doWhenFocusSettlesDown(() -> {
+                    IdeFocusManager.getGlobalInstance().requestFocus(projectFrame, true);
+                  });
+                });
               });
             } else {
               completer.error(VmServiceConst.SERVER_ERROR, "Unable to location script location", null);
