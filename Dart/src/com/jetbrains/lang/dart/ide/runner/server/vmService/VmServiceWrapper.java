@@ -542,12 +542,9 @@ public class VmServiceWrapper implements Disposable {
                   final JFrame projectFrame = WindowManager.getInstance().getFrame(project);
                   final int frameState = projectFrame.getExtendedState();
 
-                  projectFrame.setExtendedState(frameState ^ java.awt.Frame.ICONIFIED);
-                  if (!BitUtil.isSet(frameState, java.awt.Frame.ICONIFIED)) {
-                    try {
-                      Thread.sleep(100);
-                    } catch (InterruptedException e) {}
-                    projectFrame.setExtendedState(frameState);
+                  if (BitUtil.isSet(frameState, java.awt.Frame.ICONIFIED)) {
+                    // restore the frame if it is minimized
+                    projectFrame.setExtendedState(frameState ^ java.awt.Frame.ICONIFIED);
                   }
                   projectFrame.toFront();
                   IdeFocusManager.getGlobalInstance().doWhenFocusSettlesDown(() -> {
