@@ -9,7 +9,6 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Ref;
-import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.openapi.wm.WindowManager;
 import com.intellij.util.Alarm;
 import com.intellij.util.BitUtil;
@@ -30,12 +29,17 @@ import org.dartlang.vm.service.RemoteServiceRunner;
 import org.dartlang.vm.service.VmService;
 import org.dartlang.vm.service.consumer.*;
 import org.dartlang.vm.service.element.*;
+import org.dartlang.vm.service.element.Event;
+import org.dartlang.vm.service.element.Frame;
 import org.dartlang.vm.service.internal.VmServiceConst;
 import org.dartlang.vm.service.logging.Logging;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
+import java.awt.*;
+import java.awt.event.WindowEvent;
+import java.awt.event.WindowListener;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -545,11 +549,41 @@ public class VmServiceWrapper implements Disposable {
                   if (BitUtil.isSet(frameState, java.awt.Frame.ICONIFIED)) {
                     // restore the frame if it is minimized
                     projectFrame.setExtendedState(frameState ^ java.awt.Frame.ICONIFIED);
+                    projectFrame.toFront();
+                  } else {
+                    final JFrame tmp = new JFrame();
+                    tmp.setType(Window.Type.UTILITY);
+                    tmp.setUndecorated(true);
+                    tmp.setSize(0,0);
+                    tmp.addWindowListener(new WindowListener() {
+                      @Override
+                      public void windowOpened(WindowEvent e) {}
+
+                      @Override
+                      public void windowClosing(WindowEvent e) {}
+
+                      @Override
+                      public void windowClosed(WindowEvent e) {}
+
+                      @Override
+                      public void windowIconified(WindowEvent e) {}
+
+                      @Override
+                      public void windowDeiconified(WindowEvent e) {}
+
+                      @Override
+                      public void windowActivated(WindowEvent e) {
+                        projectFrame.setVisible(true);
+                        tmp.dispose();
+                      }
+
+                      @Override
+                      public void windowDeactivated(WindowEvent e) {}
+                    });
+                    tmp.pack();
+                    tmp.setVisible(true);
+                    tmp.toFront();
                   }
-                  projectFrame.toFront();
-                  IdeFocusManager.getGlobalInstance().doWhenFocusSettlesDown(() -> {
-                    IdeFocusManager.getGlobalInstance().requestFocus(projectFrame, true);
-                  });
                 });
               });
             } else {
